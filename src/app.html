@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sign</title>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Sign">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#f6f4ef">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<style>
+/*__FONTS__*/
+:root{--paper:#f6f4ef;--desk:#e4e0d7;--ink:#1b2230;--soft:#6b7280;--line:#d8d3c8;--blue:#1f4fd8;--red:#c0362c;--card:#fff}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;margin:0;overflow:hidden;overscroll-behavior:none}
+body{font:15px/1.35 -apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",sans-serif;color:var(--ink);background:var(--paper);display:flex;flex-direction:column;padding:env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left);-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+button{font:inherit;color:inherit;border:0;background:none;cursor:pointer;touch-action:manipulation}
+input{font:inherit;color:inherit;-webkit-user-select:text;user-select:text}
+.btn{min-height:44px;padding:0 16px;border-radius:10px;background:var(--card);border:1px solid var(--line);font-weight:600;white-space:nowrap}
+.btn.primary{background:var(--blue);border-color:var(--blue);color:#fff}
+.btn.danger{color:var(--red)}
+.btn:disabled{opacity:.4}
+.icon{width:44px;height:44px;border-radius:10px;font-size:21px;font-weight:500}
+.icon:active,.btn:active{opacity:.65}
+header{display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px solid var(--line);flex:none}
+#docname{flex:1;min-width:0;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center}
+#pageno{color:var(--soft);font-variant-numeric:tabular-nums;font-size:14px;min-width:54px;text-align:center}
+.zoom{display:flex;align-items:center}
+main{flex:1;display:flex;min-height:0}
+aside{width:264px;flex:none;border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
+@media(max-width:820px){aside{width:208px}}
+.side-top{padding:12px;display:flex;flex-direction:column;gap:8px}
+.search{width:100%;height:44px;border:1px solid var(--line);border-radius:10px;padding:0 12px;background:var(--card);outline-color:var(--blue)}
+#lib{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:0 12px 12px;display:flex;flex-direction:column;gap:10px}
+.tile{position:relative;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:8px 8px 6px;touch-action:pan-y;cursor:grab;flex:none}
+.tile img{display:block;width:100%;height:68px;object-fit:contain;pointer-events:none;-webkit-user-drag:none}
+.tile .row{display:flex;align-items:center;justify-content:space-between;gap:4px}
+.tile .n{font-size:13px;color:var(--soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tile .more{width:36px;height:30px;font-size:18px;color:var(--soft);flex:none}
+.side-foot{display:grid;grid-template-columns:1fr 1fr;gap:2px 6px;padding:8px 12px calc(8px + env(safe-area-inset-bottom));border-top:1px solid var(--line)}
+.side-foot button{flex:1;min-height:40px;font-size:13px;color:var(--blue);font-weight:600}
+.empty{color:var(--soft);font-size:14px;text-align:center;padding:24px 8px}
+#viewer{flex:1;min-width:0;background:var(--desk);overflow:auto;-webkit-overflow-scrolling:touch;position:relative;padding:16px 16px calc(40px + env(safe-area-inset-bottom));touch-action:pan-x pan-y}
+#pages{display:flex;flex-direction:column;align-items:center;gap:16px;min-width:min-content}
+.page{position:relative;background:#fff;box-shadow:0 1px 5px rgba(27,34,48,.28);flex:none}
+.page canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+.overlay{position:absolute;inset:0}
+.stamp{position:absolute;touch-action:none;cursor:move;z-index:5}
+.stamp img{display:block;width:100%;height:100%;pointer-events:none;-webkit-user-drag:none}
+.stamp.sel{outline:1.5px dashed var(--blue);outline-offset:1px;z-index:6}
+.h{position:absolute;display:none;width:44px;height:44px;align-items:center;justify-content:center;touch-action:none}
+.stamp.sel .h{display:flex}
+.h i{display:flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;background:var(--blue);color:#fff;font:700 13px/1 -apple-system,sans-serif;box-shadow:0 1px 3px rgba(0,0,0,.35)}
+.h.rs{right:-22px;bottom:-22px;cursor:nwse-resize}
+.h.del{right:-22px;top:-22px}.h.del i{background:var(--red)}
+#start{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;color:var(--soft);text-align:center;padding:24px}
+#start h1{margin:0;color:var(--ink);font-size:22px}
+#ghost{position:fixed;left:0;top:0;width:170px;pointer-events:none;z-index:50;opacity:.85;display:none}
+.scrim{position:fixed;inset:0;background:rgba(27,34,48,.42);display:none;align-items:center;justify-content:center;z-index:40;padding:16px}
+.scrim.on{display:flex}
+.sheet{background:var(--paper);border-radius:16px;width:min(720px,100%);max-height:100%;overflow:auto;padding:16px}
+.sheet.small{width:min(420px,100%)}
+.sheet h2{margin:0 0 12px;font-size:18px}
+.tabs{display:flex;background:var(--desk);border-radius:10px;padding:3px;margin-bottom:12px}
+.tabs button{flex:1;min-height:40px;border-radius:8px;font-weight:600;color:var(--soft)}
+.tabs button.on{background:var(--card);color:var(--ink)}
+#pad{display:block;width:100%;height:280px;background:#fff;border:1px solid var(--line);border-radius:12px;touch-action:none;cursor:crosshair}
+.opts{display:flex;align-items:center;gap:10px;margin:10px 0;flex-wrap:wrap}
+.sw{width:36px;height:36px;border-radius:50%;border:3px solid transparent;box-shadow:0 0 0 1px var(--line)}
+.sw.on{border-color:var(--paper);box-shadow:0 0 0 2px var(--blue)}
+.spacer{flex:1}
+.field{width:100%;height:48px;border:1px solid var(--line);border-radius:10px;padding:0 12px;background:var(--card);outline-color:var(--blue);margin-bottom:10px}
+.fonts{display:grid;grid-template-columns:1fr 1fr;gap:8px;max-height:280px;overflow:auto}
+.font{background:#fff;border:2px solid var(--line);border-radius:10px;height:84px;font-size:34px;white-space:nowrap;overflow:hidden;padding:0 10px;line-height:1.2}
+.font.on{border-color:var(--blue)}
+.drop{display:flex;flex-direction:column;gap:8px;align-items:center;justify-content:center;height:220px;background:#fff;border:1px solid var(--line);border-radius:12px;color:var(--soft);padding:12px}
+.drop img{max-width:100%;max-height:170px}
+.foot{display:flex;gap:8px;margin-top:12px;justify-content:flex-end;align-items:center}
+.list{display:flex;flex-direction:column;gap:8px}
+.list .btn{width:100%;text-align:left}
+.note{color:var(--soft);font-size:13px}
+#toast{position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--ink);color:#fff;padding:10px 16px;border-radius:10px;z-index:60;display:none;max-width:90vw}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<header>
+  <button class="btn" id="open">Open PDF</button>
+  <div id="docname">No document</div>
+  <div id="pageno"></div>
+  <div class="zoom"><button class="icon" id="zo" aria-label="Zoom out">−</button><button class="icon" id="zf" aria-label="Fit width" style="font-size:14px;font-weight:600">Fit</button><button class="icon" id="zi" aria-label="Zoom in">+</button></div>
+  <button class="btn primary" id="export" disabled>Export</button>
+</header>
+<main>
+  <aside>
+    <div class="side-top">
+      <button class="btn primary" id="new">New signature</button>
+      <input class="search" id="q" type="search" placeholder="Search signatures" autocomplete="off">
+    </div>
+    <div id="lib"></div>
+    <div class="side-foot"><button id="sync" hidden>Sync</button><button id="ghBtn">GitHub</button><button id="backup">Back up</button><button id="restore">Restore</button></div>
+  </aside>
+  <div id="viewer">
+    <div id="pages"></div>
+    <div id="start"><h1>Open a PDF to sign</h1><div>Then drag a signature from the left onto the page.</div><button class="btn primary" id="open2">Open PDF</button></div>
+  </div>
+</main>
+<img id="ghost" alt="">
+<div id="toast" role="status"></div>
+<input id="pdfIn" type="file" accept="application/pdf,.pdf" hidden>
+<input id="imgIn" type="file" accept="image/*" hidden>
+<input id="bakIn" type="file" accept="application/json,.json" hidden>
+
+<div class="scrim" id="newS"><div class="sheet">
+  <h2>New signature</h2>
+  <div class="tabs"><button data-t="draw" class="on">Draw</button><button data-t="type">Generate</button><button data-t="image">Import image</button></div>
+  <input class="field" id="sigName" placeholder="Name, e.g. David M. Gehry" autocomplete="off">
+  <div data-p="draw">
+    <canvas id="pad"></canvas>
+    <div class="opts"><span id="drawColors"></span><span class="spacer"></span><button class="btn" id="undo">Undo</button><button class="btn" id="clear">Clear</button></div>
+  </div>
+  <div data-p="type" hidden>
+    <div class="opts" style="margin-top:0"><span id="typeColors"></span></div>
+    <div class="fonts" id="fonts"></div>
+  </div>
+  <div data-p="image" hidden>
+    <div class="drop" id="drop"><div>Photo or scan of a signature on white paper. The background is removed.</div><button class="btn" id="pickImg">Choose image</button></div>
+  </div>
+  <div class="foot"><button class="btn" id="newCancel">Cancel</button><button class="btn primary" id="newSave">Save to library</button></div>
+</div></div>
+
+<div class="scrim" id="editS"><div class="sheet small">
+  <h2>Edit signature</h2>
+  <input class="field" id="editName" autocomplete="off">
+  <div class="foot"><button class="btn danger" id="editDel">Delete</button><span class="spacer"></span><button class="btn" id="editCancel">Cancel</button><button class="btn primary" id="editSave">Save</button></div>
+</div></div>
+
+<div class="scrim" id="expS"><div class="sheet small">
+  <h2>Export</h2>
+  <div class="list">
+    <button class="btn" id="xPdf">PDF, signed</button>
+    <button class="btn" id="xPng">PNG, this page</button>
+    <button class="btn" id="xZip">PNG, all pages (.zip)</button>
+  </div>
+  <div class="foot"><button class="btn" id="expCancel">Cancel</button></div>
+</div></div>
+
+<div class="scrim" id="ghS"><div class="sheet small">
+  <h2>GitHub signature repo</h2>
+  <label class="note">Repository (owner/name)</label>
+  <input class="field" id="ghRepo" placeholder="qed-groups/signatures" autocomplete="off" autocapitalize="off" spellcheck="false">
+  <div style="display:flex;gap:8px">
+    <div style="flex:1"><label class="note">Branch</label><input class="field" id="ghBranch" placeholder="main" autocomplete="off" autocapitalize="off" spellcheck="false"></div>
+    <div style="flex:1"><label class="note">Folder</label><input class="field" id="ghFolder" placeholder="signatures" autocomplete="off" autocapitalize="off" spellcheck="false"></div>
+  </div>
+  <label class="note">Fine-grained token (this repo only, Contents: read and write)</label>
+  <input class="field" id="ghToken" type="password" placeholder="github_pat_…" autocomplete="off" autocapitalize="off" spellcheck="false">
+  <div class="note">File names become signature names, e.g. "David M Gehry.png".</div>
+  <div class="foot"><button class="btn danger" id="ghOff">Disconnect</button><span class="spacer"></span><button class="btn" id="ghCancel">Cancel</button><button class="btn primary" id="ghSave">Save &amp; sync</button></div>
+</div></div>
+
+<div class="scrim" id="readyS"><div class="sheet small">
+  <h2 id="readyT">Ready</h2>
+  <div class="note" id="readyN"></div>
+  <div class="foot"><button class="btn" id="readyClose">Close</button><button class="btn" id="readySave">Save</button><button class="btn primary" id="readyShare">Share / Save to Files</button></div>
+</div></div>
+
+<script type="text/plain" id="pdfWorker">/*__WORKER__*/</script>
+<script>/*__LIBS__*/</script>
+<script>/*__APP__*/</script>
+</body>
+</html>
