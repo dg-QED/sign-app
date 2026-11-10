@@ -248,16 +248,19 @@ $('newSave').onclick = async () => {
 const GH = {
   cfg() { try { return JSON.parse(localStorage.getItem('sign-gh') || 'null'); } catch { return null; } },
   set(c) { try { c ? localStorage.setItem('sign-gh', JSON.stringify(c)) : localStorage.removeItem('sign-gh'); } catch {} },
-  async req(path, opt = {}) {
+  async req(path, opt = {}, repo) {
     const c = GH.cfg();
-    const r = await fetch(`https://api.github.com/repos/${c.owner}/${c.repo}/${path}`, { cache: 'no-store', ...opt,
+    const r = await fetch(`https://api.github.com/repos/${repo || c.owner + '/' + c.repo}/${path}`, { cache: 'no-store', ...opt,
       headers: { Accept: 'application/vnd.github+json', Authorization: 'Bearer ' + c.token, ...(opt.body ? { 'Content-Type': 'application/json' } : {}) } });
     if (!r.ok) { const e = new Error('GitHub ' + r.status); e.status = r.status; throw e; }
     return r.status === 204 ? null : r.json();
   },
 };
 const enc = p => p.split('/').map(encodeURIComponent).join('/');
-const pre = c => { const d = (c.folder || '').replace(/^\/+|\/+$/g, ''); return d ? d + '/' : ''; };
+const dirOf = f => { const d = (f || '').replace(/^\/+|\/+$/g, ''); return d ? d + '/' : ''; };
+const pre = c => dirOf(c.folder);
+const outRepo = c => c.outRepo || c.owner + '/' + c.repo;
+const outPre = c => dirOf(c.outFolder ?? 'signed');
 const IMG = /\.(png|jpe?g|webp|svg|ai)$/i;
 const mime = p => /\.png$/i.test(p) ? 'image/png' : /\.webp$/i.test(p) ? 'image/webp' : /\.svg$/i.test(p) ? 'image/svg+xml' : /\.ai$/i.test(p) ? 'application/pdf' : 'image/jpeg';
 const nameFrom = p => p.split('/').pop().replace(IMG, '').replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim();
@@ -283,7 +286,8 @@ async function sync(quiet) {
   if (syncing) return; syncing = true; $('sync').textContent = 'Syncing…';
   try {
     const t = await GH.req(`git/trees/${encodeURIComponent(c.branch)}?recursive=1`), p = pre(c);
-    const remote = t.tree.filter(x => x.type === 'blob' && x.path.startsWith(p) && IMG.test(x.path));
+    const skip = outRepo(c).toLowerCase() === (c.owner + '/' + c.repo).toLowerCase() ? outPre(c) : null; /* never treat signed documents as signatures */
+    const remote = t.tree.filter(x => x.type === 'blob' && x.path.startsWith(p) && IMG.test(x.path) && !(skip && x.path.startsWith(skip)));
     const local = new Map(sigs.filter(s => s.gh).map(s => [s.gh, s]));
     let added = 0, removed = 0, pushed = 0, failed = 0;
     for (const f of remote) {
@@ -311,6 +315,7 @@ function ghUi() { $('sync').hidden = !GH.cfg(); }
 function openGh() {
   const c = GH.cfg() || {};
   $('ghRepo').value = c.owner ? c.owner + '/' + c.repo : ''; $('ghBranch').value = c.branch || 'main'; $('ghFolder').value = c.folder ?? 'signatures'; $('ghToken').value = c.token || '';
+  $('ghOutRepo').value = c.outRepo || ''; $('ghOutFolder').value = c.outFolder ?? 'signed';
   $('ghOff').hidden = !GH.cfg(); open('ghS');
 }
 $('ghBtn').onclick = openGh; $('sync').onclick = () => sync(false);
@@ -320,7 +325,11 @@ $('ghSave').onclick = () => {
   const m = $('ghRepo').value.trim().replace(/^https?:\/\/(www\.)?github\.com\//, '').replace(/\.git$|\/+$/g, '').match(/^([\w.-]+)\/([\w.-]+)$/);
   if (!m) return toast('Repository should look like owner/name');
   if (!$('ghToken').value.trim()) return toast('Paste the token');
-  GH.set({ owner: m[1], repo: m[2], branch: $('ghBranch').value.trim() || 'main', folder: $('ghFolder').value.trim(), token: $('ghToken').value.trim() });
+  const parse = v => v.trim().replace(/^https?:\/\/(www\.)?github\.com\//, '').replace(/\.git$|\/+$/g, '');
+  const o = parse($('ghOutRepo').value);
+  if (o && !/^[\w.-]+\/[\w.-]+$/.test(o)) return toast('Signed documents repo should look like owner/name');
+  GH.set({ owner: m[1], repo: m[2], branch: $('ghBranch').value.trim() || 'main', folder: $('ghFolder').value.trim(), token: $('ghToken').value.trim(),
+    outRepo: o && o.toLowerCase() !== (m[1] + '/' + m[2]).toLowerCase() ? o : '', outFolder: $('ghOutFolder').value.trim() });
   ghUi(); close('ghS'); sync(false);
 };
 
@@ -538,9 +547,30 @@ function ready(blob, name, extra) {
   pending = new File([blob], name, { type: blob.type });
   $('readyT').textContent = 'Ready'; $('readyN').textContent = `${name} · ${(blob.size / 1048576).toFixed(blob.size < 1e5 ? 2 : 1)} MB${extra ? ' · ' + extra : ''}`;
   $('readyShare').hidden = !(navigator.canShare && navigator.canShare({ files: [pending] }));
+  $('readyGh').hidden = !GH.cfg() || /\.json$/i.test(name); $('readyGh').disabled = false; $('readyGh').textContent = 'Save to GitHub';
   $('readySave').hidden = false; open('readyS');
 }
 $('readyClose').onclick = () => close('readyS');
+const b64 = blob => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1]); r.onerror = rej; r.readAsDataURL(blob); });
+$('readyGh').onclick = async () => {
+  const c = GH.cfg(), f = pending, btn = $('readyGh'); if (!c || !f) return;
+  btn.disabled = true; btn.textContent = 'Saving…';
+  try {
+    const content = await b64(f), d = new Date(), day = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const dot = f.name.lastIndexOf('.'), stem = f.name.slice(0, dot), ext = f.name.slice(dot);
+    for (let i = 1; i < 100; i++) {
+      const path = `${outPre(c)}${day}/${stem}${i > 1 ? ' ' + i : ''}${ext}`;
+      try {
+        await GH.req('contents/' + enc(path), { method: 'PUT', body: JSON.stringify({ message: 'Signed: ' + f.name, content, branch: c.branch }) }, outRepo(c));
+        close('readyS'); toast('Saved to GitHub: ' + outRepo(c) + '/' + path, 4500); return;
+      } catch (e) { if (e.status !== 422) throw e; }
+    }
+    throw new Error('names');
+  } catch (e) {
+    btn.disabled = false; btn.textContent = 'Save to GitHub';
+    toast(e && e.status === 404 && c.outRepo ? 'The token has no access to ' + c.outRepo + '. Add that repo to the token.' : e && e.status === 413 ? 'File too large for GitHub upload.' : ghErr(e), 5000);
+  }
+};
 $('readyShare').onclick = async () => { try { await navigator.share({ files: [pending] }); close('readyS'); } catch (e) { if (e.name !== 'AbortError') toast('Sharing failed. Use Save.'); } };
 $('readySave').onclick = async () => {
   if (dl) { try { await dl.save({ filename: pending.name, data: pending }); close('readyS'); } catch (e) { toast('Save was declined'); } return; }
