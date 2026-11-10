@@ -111,7 +111,7 @@ aside{width:264px;flex:none;border-right:1px solid var(--line);display:flex;flex
 <img id="ghost" alt="">
 <div id="toast" role="status"></div>
 <input id="pdfIn" type="file" accept="application/pdf,.pdf" hidden>
-<input id="imgIn" type="file" accept="image/*" hidden>
+<input id="imgIn" type="file" accept="image/*,.svg,.ai,.eps,application/pdf,application/postscript,application/illustrator" hidden>
 <input id="bakIn" type="file" accept="application/json,.json" hidden>
 
 <div class="scrim" id="newS"><div class="sheet">
@@ -127,7 +127,7 @@ aside{width:264px;flex:none;border-right:1px solid var(--line);display:flex;flex
     <div class="fonts" id="fonts"></div>
   </div>
   <div data-p="image" hidden>
-    <div class="drop" id="drop"><div>Photo or scan of a signature on white paper. The background is removed.</div><button class="btn" id="pickImg">Choose image</button></div>
+    <div class="drop" id="drop"><div>Photo, scan, PNG, SVG or Illustrator file. A white background is removed.</div><button class="btn" id="pickImg">Choose image</button></div>
   </div>
   <div class="foot"><button class="btn" id="newCancel">Cancel</button><button class="btn primary" id="newSave">Save to library</button></div>
 </div></div>
@@ -427,8 +427,36 @@ function fit(c) {
   const k = 1600 / c.width, s = document.createElement('canvas'); s.width = 1600; s.height = Math.max(1, Math.round(c.height * k));
   const g = s.getContext('2d'); g.imageSmoothingQuality = 'high'; g.drawImage(c, 0, 0, s.width, s.height); return s;
 }
-async function sigFromBlob(f) {
-    const bmp = await createImageBitmap(f), k = Math.min(1, 1600 / Math.max(bmp.width, bmp.height));
+const UNIT = { px: 1, '': 1, pt: 4 / 3, pc: 16, mm: 96 / 25.4, cm: 96 / 2.54, in: 96 };
+const len = v => { const m = String(v || '').trim().match(/^([\d.]+)\s*(px|pt|pc|mm|cm|in)?$/i); return m ? parseFloat(m[1]) * UNIT[(m[2] || '').toLowerCase()] : NaN; };
+async function svgCanvas(f) {
+  const svg = new DOMParser().parseFromString(await f.text(), 'image/svg+xml').documentElement;
+  if (!svg || svg.nodeName.toLowerCase() !== 'svg') throw new Error('not svg');
+  const vb = (svg.getAttribute('viewBox') || '').trim().split(/[\s,]+/).map(Number), hasVb = vb.length === 4 && vb[2] > 0 && vb[3] > 0;
+  let w = len(svg.getAttribute('width')), h = len(svg.getAttribute('height'));
+  if (!(w > 0 && h > 0)) { if (hasVb) { w = vb[2]; h = vb[3]; } else { w = h = 1000; } }
+  if (!hasVb) svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
+  const k = 2400 / Math.max(w, h), W = Math.round(w * k), H = Math.round(h * k);
+  svg.setAttribute('width', W); svg.setAttribute('height', H); svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+  const url = URL.createObjectURL(new Blob([new XMLSerializer().serializeToString(svg)], { type: 'image/svg+xml' }));
+  try { const img = await loadImg(url), c = document.createElement('canvas'); c.width = W; c.height = H; c.getContext('2d').drawImage(img, 0, 0, W, H); return c; }
+  finally { URL.revokeObjectURL(url); }
+}
+async function aiCanvas(f) { /* Illustrator files are saved with a PDF inside, so pdf.js can draw them */
+  const d = await pdfjsLib.getDocument({ data: new Uint8Array(await f.arrayBuffer()), isEvalSupported: false }).promise;
+  try {
+    const p = await d.getPage(1), v = p.getViewport({ scale: 1 }), s = Math.min(8, Math.sqrt(16e6 / (v.width * v.height))), vp = p.getViewport({ scale: s });
+    const c = document.createElement('canvas'); c.width = Math.floor(vp.width); c.height = Math.floor(vp.height);
+    await p.render({ canvasContext: c.getContext('2d'), viewport: vp, background: 'rgba(0,0,0,0)' }).promise;
+    return c;
+  } finally { d.destroy(); }
+}
+const kindOf = (f, name) => { const n = (name || f.name || '').toLowerCase(); return /\.svgz?$/.test(n) || f.type === 'image/svg+xml' ? 'svg' : /\.(ai|pdf)$/.test(n) || f.type === 'application/pdf' ? 'ai' : /\.e?ps$/.test(n) ? 'eps' : 'img'; };
+async function sigFromBlob(f, name) {
+    const kind = kindOf(f, name);
+    if (kind === 'eps') { const e = new Error('eps'); e.eps = true; throw e; }
+    const bmp = kind === 'svg' ? await svgCanvas(f) : kind === 'ai' ? await aiCanvas(f) : await createImageBitmap(f);
+    const k = kind === 'img' ? Math.min(1, 1600 / Math.max(bmp.width, bmp.height)) : 1;
     const c = document.createElement('canvas'); c.width = bmp.width * k; c.height = bmp.height * k;
     const g = c.getContext('2d', { willReadFrequently: true }); g.drawImage(bmp, 0, 0, c.width, c.height);
     const im = g.getImageData(0, 0, c.width, c.height), d = im.data;
@@ -446,9 +474,12 @@ $('imgIn').onchange = async e => {
   const f = e.target.files[0]; e.target.value = ''; if (!f) return;
   try {
     importCanvas = await sigFromBlob(f);
-    if (!importCanvas) return toast('No signature found in that image');
+    if (!importCanvas) return toast('No signature found in that file');
     const box = $('drop'); box.querySelector('div').textContent = ''; let i = box.querySelector('img'); if (!i) { i = new Image(); box.querySelector('div').append(i); } i.src = importCanvas.toDataURL();
-  } catch { toast('Could not read that image'); }
+  } catch (err) {
+    if (err && err.eps) toast('EPS can’t be opened on the iPad. Push it to the signatures repo and it’s converted to PNG for you.', 5000);
+    else toast('Could not read that file. Illustrator files need “Create PDF Compatible File” on when saved.', 4500);
+  }
 };
 
 /* ---------- New signature sheet ---------- */
@@ -459,7 +490,7 @@ function setTab(t) {
   if (t === 'draw') sizePad(); if (t === 'type') drawFonts();
 }
 document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => setTab(b.dataset.t));
-$('new').onclick = () => { strokes = []; importCanvas = null; $('sigName').value = ''; $('drop').querySelector('div').textContent = 'Photo or scan of a signature on white paper. The background is removed.'; open('newS'); setTab('draw'); };
+$('new').onclick = () => { strokes = []; importCanvas = null; $('sigName').value = ''; $('drop').querySelector('div').textContent = 'Photo, scan, PNG, SVG or Illustrator file. A white background is removed.'; open('newS'); setTab('draw'); };
 $('newCancel').onclick = () => close('newS');
 $('newSave').onclick = async () => {
   let c = null; const typed = $('sigName').value.trim();
@@ -488,8 +519,8 @@ const GH = {
 };
 const enc = p => p.split('/').map(encodeURIComponent).join('/');
 const pre = c => { const d = (c.folder || '').replace(/^\/+|\/+$/g, ''); return d ? d + '/' : ''; };
-const IMG = /\.(png|jpe?g|webp)$/i;
-const mime = p => /\.png$/i.test(p) ? 'image/png' : /\.webp$/i.test(p) ? 'image/webp' : 'image/jpeg';
+const IMG = /\.(png|jpe?g|webp|svg|ai)$/i;
+const mime = p => /\.png$/i.test(p) ? 'image/png' : /\.webp$/i.test(p) ? 'image/webp' : /\.svg$/i.test(p) ? 'image/svg+xml' : /\.ai$/i.test(p) ? 'application/pdf' : 'image/jpeg';
 const nameFrom = p => p.split('/').pop().replace(IMG, '').replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim();
 function ghErr(e) {
   if (e && e.status === 401) return 'GitHub rejected the token.';
@@ -522,7 +553,7 @@ async function sync(quiet) {
       try {
         const b = await GH.req('git/blobs/' + f.sha);
         const bin = Uint8Array.from(atob(b.content.replace(/\s/g, '')), ch => ch.charCodeAt(0));
-        const cv = await sigFromBlob(new Blob([bin], { type: mime(f.path) }));
+        const cv = await sigFromBlob(new Blob([bin], { type: mime(f.path) }), f.path);
         if (!cv) { failed++; continue; }
         const s = fit(cv);
         await DB.put({ id: l ? l.id : 'gh:' + f.path, name: l ? l.name : nameFrom(f.path), src: s.toDataURL('image/png'), aspect: s.height / s.width, kind: 'github', created: l ? l.created : Date.now(), used: l ? l.used : 0, gh: f.path, sha: f.sha });

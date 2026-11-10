@@ -111,7 +111,7 @@ aside{width:264px;flex:none;border-right:1px solid var(--line);display:flex;flex
 <img id="ghost" alt="">
 <div id="toast" role="status"></div>
 <input id="pdfIn" type="file" accept="application/pdf,.pdf" hidden>
-<input id="imgIn" type="file" accept="image/*" hidden>
+<input id="imgIn" type="file" accept="image/*,.svg,.ai,.eps,application/pdf,application/postscript,application/illustrator" hidden>
 <input id="bakIn" type="file" accept="application/json,.json" hidden>
 
 <div class="scrim" id="newS"><div class="sheet">
@@ -127,7 +127,7 @@ aside{width:264px;flex:none;border-right:1px solid var(--line);display:flex;flex
     <div class="fonts" id="fonts"></div>
   </div>
   <div data-p="image" hidden>
-    <div class="drop" id="drop"><div>Photo or scan of a signature on white paper. The background is removed.</div><button class="btn" id="pickImg">Choose image</button></div>
+    <div class="drop" id="drop"><div>Photo, scan, PNG, SVG or Illustrator file. A white background is removed.</div><button class="btn" id="pickImg">Choose image</button></div>
   </div>
   <div class="foot"><button class="btn" id="newCancel">Cancel</button><button class="btn primary" id="newSave">Save to library</button></div>
 </div></div>
