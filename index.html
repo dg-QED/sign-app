@@ -56,6 +56,8 @@ aside{width:264px;flex:none;border-right:1px solid var(--line);display:flex;flex
 .h i{display:flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;background:var(--blue);color:#fff;font:700 13px/1 -apple-system,sans-serif;box-shadow:0 1px 3px rgba(0,0,0,.35)}
 .h.rs{right:-22px;bottom:-22px;cursor:nwse-resize}
 .h.del{right:-22px;top:-22px}.h.del i{background:var(--red)}
+.h.ro{left:-22px;bottom:-22px;cursor:grab}.h.ro i{font-size:15px}
+.h.r9{left:-22px;top:-22px}.h.r9 i{width:30px;border-radius:12px;font-size:10px}
 #start{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;color:var(--soft);text-align:center;padding:24px}
 #start h1{margin:0;color:var(--ink);font-size:22px}
 #ghost{position:fixed;left:0;top:0;width:170px;pointer-events:none;z-index:50;opacity:.85;display:none}
@@ -71,6 +73,9 @@ aside{width:264px;flex:none;border-right:1px solid var(--line);display:flex;flex
 .opts{display:flex;align-items:center;gap:10px;margin:10px 0;flex-wrap:wrap}
 .sw{width:36px;height:36px;border-radius:50%;border:3px solid transparent;box-shadow:0 0 0 1px var(--line)}
 .sw.on{border-color:var(--paper);box-shadow:0 0 0 2px var(--blue)}
+.inks{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.sw.custom{position:relative;display:inline-block;background:conic-gradient(#e33,#ec3,#3c5,#3ae,#64e,#e3a,#e33);cursor:pointer}
+.sw.custom input{position:absolute;inset:0;opacity:0;width:100%;height:100%;cursor:pointer;border:0;padding:0}
 .spacer{flex:1}
 .field{width:100%;height:48px;border:1px solid var(--line);border-radius:10px;padding:0 12px;background:var(--card);outline-color:var(--blue);margin-bottom:10px}
 .fonts{display:grid;grid-template-columns:1fr 1fr;gap:8px;max-height:280px;overflow:auto}
@@ -268,7 +273,8 @@ tslib/tslib.es6.js:
 'use strict';
 const $ = id => document.getElementById(id);
 const FONTS = ['Great Vibes','Allura','Sacramento','Mrs Saint Delafield','Herr Von Muellerhoff','Homemade Apple'];
-const COLORS = ['#10141c','#1a3a9c'];
+const INKS = [['#10141c','Black'],['#1a3a9c','Blue'],['#0e1d48','Navy'],['#2a6fdb','Bright blue'],['#b3261e','Red'],['#1f6b3a','Green'],['#6b2fa3','Purple'],['#6b4226','Brown'],['#5a6270','Grey']];
+const COLORS = INKS.map(c => c[0]);
 const toast = (m, ms = 2400) => { const t = $('toast'); t.textContent = m; t.style.display = 'block'; clearTimeout(toast.t); toast.t = setTimeout(() => t.style.display = 'none', ms); };
 const open = id => $(id).classList.add('on');
 const close = id => $(id).classList.remove('on');
@@ -355,8 +361,12 @@ function trim(c) {
   return o;
 }
 function colorRow(el, get, set) {
-  const paint = () => [...el.children].forEach((b, i) => b.classList.toggle('on', COLORS[i] === get()));
-  COLORS.forEach(c => { const b = document.createElement('button'); b.className = 'sw'; b.style.background = c; b.style.marginRight = '8px'; b.setAttribute('aria-label', c === COLORS[0] ? 'Black ink' : 'Blue ink'); b.onclick = () => { set(c); paint(); }; el.append(b); });
+  el.classList.add('inks');
+  const sw = INKS.map(([c, n]) => { const b = document.createElement('button'); b.className = 'sw'; b.style.background = c; b.title = n; b.setAttribute('aria-label', n + ' ink'); b.onclick = () => { set(c); paint(); }; el.append(b); return b; });
+  const lab = document.createElement('label'); lab.className = 'sw custom'; lab.title = 'Custom colour'; lab.setAttribute('aria-label', 'Custom ink colour');
+  const pick = document.createElement('input'); pick.type = 'color'; pick.value = '#7a1f5c'; lab.append(pick); el.append(lab);
+  pick.oninput = () => { set(pick.value); paint(); };
+  function paint() { const v = get(); sw.forEach((b, i) => b.classList.toggle('on', COLORS[i] === v)); const custom = !COLORS.includes(v); lab.classList.toggle('on', custom); if (custom) lab.style.background = v; }
   paint();
 }
 
@@ -673,19 +683,42 @@ const DEF_W_PT = 170;
 function pageAt(x, y) { for (const g of pages) { const b = g.el.getBoundingClientRect(); if (x >= b.left && x <= b.right && y >= b.top && y <= b.bottom) return g; } return null; }
 function select(s) { if (selected) selected.el.classList.remove('sel'); selected = s; if (s) s.el.classList.add('sel'); }
 const hFrac = (s, g) => s.w * s.aspect * g.w / g.h;
-function pos(s) { s.el.style.left = s.x * 100 + '%'; s.el.style.top = s.y * 100 + '%'; s.el.style.width = s.w * 100 + '%'; const g = pages[s.page]; s.el.style.height = hFrac(s, g) * 100 + '%'; }
-function keepIn(s) { const g = pages[s.page], h = hFrac(s, g); s.x = clamp(s.x, 0, Math.max(0, 1 - s.w)); s.y = clamp(s.y, 0, Math.max(0, 1 - h)); }
+function pos(s) { s.el.style.left = s.x * 100 + '%'; s.el.style.top = s.y * 100 + '%'; s.el.style.width = s.w * 100 + '%'; const g = pages[s.page]; s.el.style.height = hFrac(s, g) * 100 + '%'; s.el.style.transform = s.rot ? `rotate(${s.rot}deg)` : ''; }
+function keepIn(s) { /* keep the whole (rotated) signature on the page */
+  const g = pages[s.page], a = (s.rot || 0) * Math.PI / 180, hw = s.w * g.w / 2, hh = hFrac(s, g) * g.h / 2;
+  const ex = (Math.abs(hw * Math.cos(a)) + Math.abs(hh * Math.sin(a))) / g.w, ey = (Math.abs(hw * Math.sin(a)) + Math.abs(hh * Math.cos(a))) / g.h;
+  const cx = ex >= .5 ? .5 : clamp(s.x + s.w / 2, ex, 1 - ex), cy = ey >= .5 ? .5 : clamp(s.y + hFrac(s, g) / 2, ey, 1 - ey);
+  s.x = cx - s.w / 2; s.y = cy - hFrac(s, g) / 2;
+}
+const centre = s => { const r = pages[s.page].el.getBoundingClientRect(); return { x: r.left + (s.x + s.w / 2) * r.width, y: r.top + (s.y + hFrac(s, pages[s.page]) / 2) * r.height, r }; };
+function rotateStart(e, s) {
+  const c = centre(s), a0 = Math.atan2(e.clientY - c.y, e.clientX - c.x), r0 = s.rot || 0;
+  track(e, ev => {
+    let r = r0 + (Math.atan2(ev.clientY - c.y, ev.clientX - c.x) - a0) * 180 / Math.PI;
+    r = ((r % 360) + 540) % 360 - 180; /* -180..180 */
+    const snap = Math.round(r / 45) * 45; if (Math.abs(r - snap) < 4) r = snap;
+    s.rot = Math.round(r * 10) / 10; pos(s); showAngle(s);
+  }, () => { keepIn(s); pos(s); hideAngle(); });
+}
+function showAngle(s) { const t = $('toast'); t.textContent = `Rotation ${Math.round(s.rot)}°`; t.style.display = 'block'; clearTimeout(toast.t); }
+function hideAngle() { clearTimeout(toast.t); toast.t = setTimeout(() => $('toast').style.display = 'none', 700); }
 function place(sig, g, cx, cy) {
   const w = Math.min(DEF_W_PT / g.w, .6);
-  const s = { id: uid(), src: sig.src, aspect: sig.aspect, page: g.i, w, x: 0, y: 0, el: null };
+  const s = { id: uid(), src: sig.src, aspect: sig.aspect, page: g.i, w, x: 0, y: 0, rot: 0, el: null, name: sig.name, placedAt: new Date(), ip: null };
+  s.ipP = publicIp().then(v => s.ip = v);
   s.x = cx - w / 2; s.y = cy - hFrac(s, g) / 2; keepIn(s);
   const el = document.createElement('div'); el.className = 'stamp'; s.el = el;
   const im = new Image(); im.src = sig.src; im.alt = '';
   const rs = document.createElement('div'); rs.className = 'h rs'; rs.innerHTML = '<i>⤡</i>';
   const del = document.createElement('div'); del.className = 'h del'; del.innerHTML = '<i>×</i>';
-  el.append(im, rs, del); g.ov.append(el); pos(s); placed.push(s); select(s);
+  const ro = document.createElement('div'); ro.className = 'h ro'; ro.innerHTML = '<i>↻</i>';
+  const r9 = document.createElement('div'); r9.className = 'h r9'; r9.innerHTML = '<i>90°</i>';
+  el.append(im, rs, del, ro, r9); g.ov.append(el); pos(s); placed.push(s); select(s);
   el.addEventListener('pointerdown', e => moveStart(e, s));
   rs.addEventListener('pointerdown', e => resizeStart(e, s));
+  ro.addEventListener('pointerdown', e => rotateStart(e, s));
+  r9.addEventListener('pointerdown', e => { e.stopPropagation(); e.preventDefault(); });
+  r9.addEventListener('click', e => { e.stopPropagation(); s.rot = Math.round(((s.rot || 0) + 90 + 180) % 360 - 180); keepIn(s); pos(s); showAngle(s); hideAngle(); });
   del.addEventListener('pointerdown', e => { e.stopPropagation(); e.preventDefault(); });
   del.addEventListener('click', e => { e.stopPropagation(); el.remove(); placed = placed.filter(x => x !== s); selected = null; });
   sig.used = Date.now(); DB.put(sig);
@@ -717,9 +750,12 @@ function moveStart(e, s) {
     keepIn(s); pos(s);
   });
 }
-function resizeStart(e, s) {
-  const g = pages[s.page], r = g.el.getBoundingClientRect();
-  track(e, ev => { s.w = clamp((ev.clientX - r.left) / r.width - s.x, 24 / g.w, 1 - s.x); pos(s); }, () => { keepIn(s); pos(s); });
+function resizeStart(e, s) { /* scale around the centre, works at any rotation */
+  const g = pages[s.page], c = centre(s), d0 = Math.max(4, Math.hypot(e.clientX - c.x, e.clientY - c.y)), w0 = s.w, cx = s.x + s.w / 2, cy = s.y + hFrac(s, g) / 2;
+  track(e, ev => {
+    s.w = clamp(w0 * Math.hypot(ev.clientX - c.x, ev.clientY - c.y) / d0, 24 / g.w, 1);
+    s.x = cx - s.w / 2; s.y = cy - hFrac(s, g) / 2; pos(s);
+  }, () => { keepIn(s); pos(s); });
 }
 function tileDrag(t, sig) {
   t.addEventListener('pointerdown', e => {
@@ -743,6 +779,76 @@ function tileDrag(t, sig) {
   });
 }
 
+/* ---------- Audit trail ---------- */
+let ipCache = null;
+function publicIp() { /* MAC addresses are never visible to web apps, so the public IP is what can be logged */
+  if (ipCache && Date.now() - ipCache.t < 3e5) return ipCache.p;
+  const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 5000);
+  const p = fetch('https://api.ipify.org?format=json', { cache: 'no-store', signal: ctl.signal }).then(r => r.json()).then(j => j.ip || 'Unavailable').catch(() => 'Unavailable (offline)').finally(() => clearTimeout(t));
+  ipCache = { t: Date.now(), p }; p.then(v => { if (/^Unavailable/.test(v)) ipCache = null; });
+  return p;
+}
+function deviceId() {
+  try { let id = localStorage.getItem('sign-device'); if (!id) { id = 'SGN-' + crypto.getRandomValues(new Uint32Array(3)).reduce((a, n) => a + n.toString(36).toUpperCase().padStart(7, '0'), '').replace(/(.{7})(?=.)/g, '$1-'); localStorage.setItem('sign-device', id); } return id; }
+  catch { return 'Unavailable'; }
+}
+function deviceInfo() {
+  const ua = navigator.userAgent, ipad = /iPad/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+  const os = ipad ? 'iPadOS' : /iPhone/.test(ua) ? 'iOS' : /Mac/.test(ua) ? 'macOS' : /Windows/.test(ua) ? 'Windows' : /Android/.test(ua) ? 'Android' : /Linux/.test(ua) ? 'Linux' : 'Unknown';
+  const v = (ua.match(/Version\/([\d.]+)/) || ua.match(/Chrome\/([\d.]+)/) || [])[1];
+  const br = /CriOS|Chrome/.test(ua) ? 'Chrome' : /Safari/.test(ua) ? 'Safari' : 'Browser';
+  return `${ipad ? 'iPad' : os} · ${os}${v && br === 'Safari' ? ' ' + v : ''} · ${br}${v && br !== 'Safari' ? ' ' + v : ''}${matchMedia('(display-mode: standalone)').matches ? ' · Home Screen app' : ''}`;
+}
+function stamp2(d) {
+  const p = n => String(n).padStart(2, '0'), off = -d.getTimezoneOffset(), sign = off >= 0 ? '+' : '-';
+  let tz = ''; try { tz = new Intl.DateTimeFormat('en-CA', { timeZoneName: 'short' }).formatToParts(d).find(x => x.type === 'timeZoneName').value; } catch {}
+  return { local: `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())} ${tz}`.trim(),
+    utc: `UTC${sign}${p(Math.floor(Math.abs(off) / 60))}:${p(Math.abs(off) % 60)} · ${d.toISOString().replace('T', ' ').slice(0, 19)}Z` };
+}
+async function sha256(u8) { try { const h = await crypto.subtle.digest('SHA-256', u8); return [...new Uint8Array(h)].map(b => b.toString(16).padStart(2, '0')).join(''); } catch { return 'Unavailable'; } }
+async function auditPage(out) {
+  const { StandardFonts, rgb } = PDFLib;
+  await Promise.all(placed.map(s => s.ipP));
+  const f = await out.embedFont(StandardFonts.Helvetica), fb = await out.embedFont(StandardFonts.HelveticaBold);
+  const safe = (t, font) => [...String(t)].map(ch => { try { font.encodeText(ch); return ch; } catch { return '?'; } }).join('');
+  const fitT = (t, font, size, w) => { t = safe(t, font); if (font.widthOfTextAtSize(t, size) <= w) return t; while (t.length > 1 && font.widthOfTextAtSize(t + '…', size) > w) t = t.slice(0, -1); return t + '…'; };
+  const now = new Date(), ex = stamp2(now), exIp = await publicIp(), hash = await sha256(bytes);
+  const ink = rgb(.106, .133, .188), soft = rgb(.42, .45, .5), line = rgb(.85, .83, .78), M = 48, PW = 612, PH = 792;
+  const rows = placed.map(s => ({ s, pg: s.page + 1 })).sort((a, b) => a.s.placedAt - b.s.placedAt);
+  const imgs = new Map();
+  for (const r of rows) if (!imgs.has(r.s.src)) imgs.set(r.s.src, await out.embedPng(dataBytes(r.s.src)));
+  const cols = [[M, '#', 18], [M + 20, 'Signature', 92], [M + 118, 'Name', 112], [M + 236, 'Page', 30], [M + 268, 'Date & time placed', 150], [M + 424, 'IP address', 92]];
+  let page, y, n = 0; const pagesOut = [];
+  const head = first => {
+    page = out.addPage([PW, PH]); pagesOut.push(page); y = PH - M;
+    page.drawText(first ? 'Signature Audit Log' : 'Signature Audit Log (continued)', { x: M, y: y - 16, size: 17, font: fb, color: ink }); y -= 30;
+    if (first) {
+      const kv = [['Document', fname + '.pdf'], ['Original SHA-256', hash], ['Document pages', String(pages.length)], ['Signatures placed', String(rows.length)],
+        ['Exported', ex.local + '  (' + ex.utc + ')'], ['Exported from IP', exIp], ['Device ID', deviceId()], ['Device', deviceInfo()]];
+      for (const [k, v] of kv) { page.drawText(k, { x: M, y: y - 10, size: 8.5, font: fb, color: soft }); page.drawText(fitT(v, f, 8.5, PW - 2 * M - 110), { x: M + 110, y: y - 10, size: 8.5, font: f, color: ink }); y -= 14; }
+      y -= 10;
+    }
+    page.drawRectangle({ x: M, y: y - 18, width: PW - 2 * M, height: 18, color: rgb(.894, .878, .843) });
+    for (const [x, t] of cols) page.drawText(t, { x: x + 3, y: y - 12.5, size: 8, font: fb, color: ink });
+    y -= 18;
+  };
+  head(true);
+  for (const r of rows) {
+    const RH = 40; if (y - RH < M + 24) head(false);
+    const s = r.s, t = stamp2(s.placedAt), im = imgs.get(s.src), bw = 86, bh = 30, k = Math.min(bw / im.width, bh / im.height);
+    page.drawText(String(++n), { x: cols[0][0] + 3, y: y - 16, size: 8.5, font: f, color: ink });
+    page.drawImage(im, { x: cols[1][0] + 3, y: y - 5 - bh + (bh - im.height * k) / 2, width: im.width * k, height: im.height * k });
+    page.drawText(fitT(s.name || 'Signature', f, 8.5, 106), { x: cols[2][0] + 3, y: y - 16, size: 8.5, font: f, color: ink });
+    if (s.rot) page.drawText(safe(`Rotated ${Math.round(s.rot)}°`, f), { x: cols[2][0] + 3, y: y - 27, size: 7, font: f, color: soft });
+    page.drawText(String(r.pg), { x: cols[3][0] + 3, y: y - 16, size: 8.5, font: f, color: ink });
+    page.drawText(t.local, { x: cols[4][0] + 3, y: y - 16, size: 8.5, font: f, color: ink });
+    page.drawText(safe(t.utc, f), { x: cols[4][0] + 3, y: y - 27, size: 7, font: f, color: soft });
+    page.drawText(fitT(s.ip || 'Unavailable', f, 8.5, 88), { x: cols[5][0] + 3, y: y - 16, size: 8.5, font: f, color: ink });
+    y -= RH; page.drawLine({ start: { x: M, y }, end: { x: PW - M, y }, thickness: .5, color: line });
+  }
+  pagesOut.forEach((p, i) => p.drawText(`Generated by Sign · audit page ${i + 1} of ${pagesOut.length} · times recorded when each signature was placed`, { x: M, y: M - 18, size: 7, font: f, color: soft }));
+}
+
 /* ---------- Export ---------- */
 let busy = false;
 const dataBytes = u => Uint8Array.from(atob(u.split(',')[1]), c => c.charCodeAt(0));
@@ -753,7 +859,10 @@ async function renderFlat(g, scale) {
   const x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height);
   await g.p.render({ canvasContext: x, viewport: vp }).promise;
   x.imageSmoothingQuality = 'high';
-  for (const st of placed.filter(p => p.page === g.i)) { const i = await loadImg(st.src), W = st.w * c.width; x.drawImage(i, st.x * c.width, st.y * c.height, W, W * st.aspect); }
+  for (const st of placed.filter(p => p.page === g.i)) {
+    const i = await loadImg(st.src), W = st.w * c.width, H = W * st.aspect;
+    x.save(); x.translate(st.x * c.width + W / 2, st.y * c.height + H / 2); x.rotate((st.rot || 0) * Math.PI / 180); x.drawImage(i, -W / 2, -H / 2, W, H); x.restore();
+  }
   return c;
 }
 const toBlob = (c, t, q) => new Promise(r => c.toBlob(r, t, q));
@@ -765,14 +874,17 @@ async function exportPdf() {
     for (const st of placed) {
       const g = pages[st.page], pg = list[st.page], vp = g.p.getViewport({ scale: 1 });
       if (!cache.has(st.src)) cache.set(st.src, await out.embedPng(dataBytes(st.src)));
-      const W = st.w * g.w, H = W * st.aspect, X = st.x * g.w, Y = st.y * g.h;
-      const [px, py] = vp.convertToPdfPoint(X, Y + H);
-      pg.drawImage(cache.get(st.src), { x: px, y: py, width: W, height: H, rotate: degrees(g.p.rotate || 0) });
+      const W = st.w * g.w, H = W * st.aspect, X = st.x * g.w, Y = st.y * g.h, a = (st.rot || 0) * Math.PI / 180;
+      /* the image's own bottom-left corner, turned with the signature around its centre (screen space, y down) */
+      const cx = X + W / 2, cy = Y + H / 2, dx = -W / 2, dy = H / 2;
+      const [px, py] = vp.convertToPdfPoint(cx + dx * Math.cos(a) - dy * Math.sin(a), cy + dx * Math.sin(a) + dy * Math.cos(a));
+      pg.drawImage(cache.get(st.src), { x: px, y: py, width: W, height: H, rotate: degrees((g.p.rotate || 0) - (st.rot || 0)) });
     }
   } catch (err) { /* secured PDFs cannot be edited in place, so rebuild from page images */
     console.warn(err); out = await PDFDocument.create();
     for (const g of pages) { const c = await renderFlat(g, 200 / 72), im = await out.embedJpg(new Uint8Array(await (await toBlob(c, 'image/jpeg', .92)).arrayBuffer())); out.addPage([g.w, g.h]).drawImage(im, { x: 0, y: 0, width: g.w, height: g.h }); }
   }
+  if (placed.length) await auditPage(out);
   return new Blob([await out.save()], { type: 'application/pdf' });
 }
 const crcT = (() => { const t = []; for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
